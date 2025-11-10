@@ -45,8 +45,28 @@ function scheduleOverdueJob() {
 // Inicializa rotina ao carregar o servidor
 scheduleOverdueJob();
 
- const corsOrigins = String(process.env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+ const corsOriginsRaw = String(process.env.CORS_ORIGINS || '')
+   .split(',')
+   .map(s => s.trim())
+   .filter(Boolean);
+ const corsOrigins = corsOriginsRaw.map(o => o.replace(/\/$/, '')); // remover barra final
  const defaultDevOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
+
+ // helper: verifica se origem é permitida, suportando wildcard do tipo "*.dominio.com"
+ function isAllowedOrigin(origin) {
+   if (!origin) return false;
+   // match exato
+   if (corsOrigins.includes(origin)) return true;
+   // wildcard simples: *.vercel.app, *.onrender.com
+   for (const entry of corsOrigins) {
+     if (entry.startsWith('*.')) {
+       const suffix = entry.slice(1); // ".vercel.app"
+       if (origin.endsWith(suffix)) return true;
+     }
+   }
+   return false;
+ }
+
  fastify.register(require('@fastify/cors'), {
    origin: (origin, cb) => {
      const o = origin || '';
@@ -56,10 +76,15 @@ scheduleOverdueJob();
        return cb(null, false);
      }
      if (!o) return cb(null, false);
-     if (corsOrigins.includes(o)) return cb(null, true);
+     if (isAllowedOrigin(o)) return cb(null, true);
      return cb(null, false);
    },
    credentials: true,
+   // permitir headers e métodos usados nos endpoints
+   allowedHeaders: ['authorization', 'content-type', 'x-refresh-token'],
+   exposedHeaders: ['x-new-access-token'],
+   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+   maxAge: 600,
  });
  fastify.get('/health', async () => ({ ok: true }));
 // RBAC helpers
