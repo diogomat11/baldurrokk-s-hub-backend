@@ -1,0 +1,31 @@
+name: Backend Smoke Tests (Post-Deploy)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL do backend (ex.: https://app.onrender.com)"
+        required: true
+        type: string
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    env:
+      BASE_URL: ${{ github.event.inputs.base_url }}
+      API_KEY: ${{ secrets.API_KEY }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Mostrar contexto
+        shell: pwsh
+        run: |
+          Write-Host "BASE_URL=$env:BASE_URL"
+          if (-not $env:API_KEY) { throw "API_KEY secreto não configurado no repositório." }
+
+      - name: Executar smoke tests
+        shell: pwsh
+        working-directory: baldurrokk-s-hub-backend
+        run: |
+          scripts/smoke-tests.ps1 -Base "$env:BASE_URL" -ApiKey "$env:API_KEY"

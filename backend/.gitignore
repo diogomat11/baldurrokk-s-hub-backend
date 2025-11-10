@@ -1,0 +1,27 @@
+### Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+### Build & coverage
+dist/
+build/
+coverage/
+.cache/
+tmp/
+test/tmp/
+
+### Env & secrets
+.env*
+RENDER_SECRETS.local.env
+RENDER_SECRETS.sample.env
+
+### Supabase local files (handled at repo root for broader paths)
+../supabase/.temp/
+../supabase/tmp_remote_migrations.sql
+
+### OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: backend-api
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm run start
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromSecret: SUPABASE_SERVICE_ROLE_KEY
+      - key: SUPABASE_ANON_KEY
+        fromSecret: SUPABASE_ANON_KEY
+      - key: API_KEY
+        fromSecret: API_KEY
+      - key: WHATSAPP_PROVIDER
+        value: stub
+      - key: WHATSAPP_VERIFY_TOKEN
+        fromSecret: WHATSAPP_VERIFY_TOKEN
+      - key: META_APP_SECRET
+        fromSecret: META_APP_SECRET
+      - key: STRICT_WEBHOOK_SIGNATURE
+        value: "true"
+      - key: CORS_ORIGINS
+        fromSecret: CORS_ORIGINS
+    healthCheckPath: /health
+
+  - type: worker
+    name: whatsapp-worker
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm run worker
+    autoDeploy: true
+    envVars:
+      - key: SUPABASE_URL
+        fromSecret: SUPABASE_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromSecret: SUPABASE_SERVICE_ROLE_KEY
+      - key: WHATSAPP_PROVIDER
+        value: stub
+      - key: WORKER_BATCH_SIZE
+        value: "10"
+      - key: WORKER_INTERVAL_MS
+        value: "10000"
+      - key: DRY_RUN
+        value: "false"

@@ -1,0 +1,245 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --omit=dev
+      - name: Start API (background)
+        working-directory: backend
+        env:
+          PORT: 3001
+          WHATSAPP_PROVIDER: stub
+          API_KEY: dev-key
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          node src/server.js &
+          echo $! > api.pid
+          for i in {1..30}; do
+            curl -sS http://127.0.0.1:3001/health && break || sleep 1;
+          done
+      - name: Run tests
+        working-directory: backend
+        env:
+          BASE_URL: http://127.0.0.1:3001
+          API_KEY: dev-key
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: npm test
+      - name: Stop API
+        if: always()
+        working-directory: backend
+        run: |
+          kill $(cat api.pid) || true
+
+  finance-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --omit=dev
+      - name: Run finance integration tests
+        working-directory: backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node --test test/finance_integration.test.js
+
+  build-and-test-strict:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --omit=dev
+      - name: Start API (background, strict webhook)
+        working-directory: backend
+        env:
+          PORT: 3001
+          WHATSAPP_PROVIDER: stub
+          API_KEY: dev-key
+          STRICT_WEBHOOK_SIGNATURE: true
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          node src/server.js &
+          echo $! > api.pid
+          for i in {1..30}; do
+            curl -sS http://127.0.0.1:3001/health && break || sleep 1;
+          done
+      - name: Run strict webhook tests only
+        working-directory: backend
+        env:
+          BASE_URL: http://127.0.0.1:3001
+          STRICT_WEBHOOK_SIGNATURE: true
+          META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+        run: node --test test/webhook_strict_signature.test.js
+      - name: Stop API
+        if: always()
+        working-directory: backend
+        run: |
+          kill $(cat api.pid) || true
+
+  windows-smoke:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --omit=dev
+      - name: Start API (background)
+        working-directory: backend
+        env:
+          PORT: 3001
+          WHATSAPP_PROVIDER: stub
+          API_KEY: dev-key
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          $p = Start-Process -FilePath node -ArgumentList "src/server.js" -PassThru
+          $p.Id | Set-Content api.pid
+          for ($i=0; $i -lt 30; $i++) {
+            try { Invoke-RestMethod -Uri "http://127.0.0.1:3001/health" -Method GET; break } catch { Start-Sleep -Seconds 1 }
+          }
+      - name: Run smoke tests (PowerShell)
+        working-directory: .
+        run: scripts/smoke-tests.ps1 -Base "http://127.0.0.1:3001" -ApiKey "dev-key"
+      - name: Stop API
+        if: always()
+        working-directory: backend
+        run: |
+          $id = Get-Content api.pid
+          Stop-Process -Id $id -Force
+  send-latest-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci --omit=dev
+      - name: Start API (background)
+        working-directory: backend
+        env:
+          PORT: 3001
+          WHATSAPP_PROVIDER: stub
+          API_KEY: dev-key
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          node src/server.js &
+          echo $! > api.pid
+          for i in {1..30}; do
+            curl -sS http://127.0.0.1:3001/health && break || sleep 1;
+          done
+      - name: Seed minimal data
+        working-directory: backend
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SEED_QUEUE_WHATSAPP: false
+          SEED_DUE_DAY: 5
+        run: node src/seed.js
+      - name: Run send_latest_whatsapp in dry-run
+        working-directory: backend
+        env:
+          PORT: 3001
+          API_KEY: dev-key
+          DRY_RUN_SEND: true
+          ONLY_OPEN: true
+          LIMIT: 2
+          LOG_DETAILS: true
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: node src/send_latest_whatsapp.js
+      - name: Stop API
+        if: always()
+        working-directory: backend
+        run: |
+          kill $(cat api.pid) || true
+
+  supabase-types:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Supabase CLI
+        run: curl -sL https://supabase.com/cli/install | sh
+      - name: Extract project ref
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        run: |
+          REF=$(echo "$SUPABASE_URL" | sed -E 's#https?://([^\.]+)\..*#\1#')
+          echo "PROJECT_REF=$REF" >> $GITHUB_ENV
+      - name: Generate types
+        run: supabase gen types typescript --project-id "$PROJECT_REF" --schema public > backend/src/types/supabase.d.ts
+      - name: Upload supabase.d.ts artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-types
+          path: backend/src/types/supabase.d.ts

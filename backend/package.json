@@ -1,0 +1,39 @@
+{
+  "name": "coelho-fc-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "kill-port 3001 && node src/server.js",
+    "test": "node --test",
+    "worker": "node src/worker.js",
+    "seed": "node src/seed.js",
+    "outbox": "node src/check_outbox.js",
+    "send-latest": "node src/send_latest_whatsapp.js",
+    "export:invoices": "node src/export_invoices_csv.js",
+    "export:repasses": "node src/export_repasses_csv.js",
+    "export:expenses": "node src/export_expenses_csv.js",
+    "repasses:generate": "node src/generate_repasses.js",
+    "expense:seed": "node src/seed_expense.js",
+    "expenses:bulk-seed": "node src/bulk_seed_expenses.js",
+    "repasses:bulk-seed": "node src/bulk_seed_prof_repasses.js",
+    "export:all": "node src/export_all_csv.js",
+    "repasses:generate:unit": "node src/generate_unit_repasses.js",
+    "unit:set-fixed": "node src/set_unit_fixed_repass.js",
+    "repasses:pay": "node src/mark_repass_paid.js",
+    "repasses:list": "node src/repasses_list.js",
+    "advances:bulk-seed": "node src/bulk_seed_advances.js",
+    "export:advances": "node src/export_advances_csv.js",
+    "gen:types": "node ../scripts/gen-types.js"
+  },
+  "dependencies": {
+    "@fastify/cors": "^8.3.0",
+    "@supabase/supabase-js": "^2.47.6",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.26.2"
+  },
+  "devDependencies": {
+    "kill-port": "^2.0.1"
+  }
+}

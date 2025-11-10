@@ -1,0 +1,205 @@
+# Plano de Implantação (etapas + checklist detalhado — formato legível)
+
+Abaixo versão textual (resumida / checklist) para execução em sprints — você pode transformar cada item em ticket no JIRA/Trello.
+
+## Fase 0 — Preparação
+- Criar repositórios (frontend, backend, infra).
+- Provisionar Supabase (db + auth + storage).
+- Definir esquema inicial no Supabase com migrations.
+- Criar CI (lint, unit tests).
+- Configurar Sentry/monitoring.
+- Checklist:
+  - [ ] Repos criados
+  - [v] Acesso Supabase configurado
+  - [v] Política RLS inicial criada (Admin full; role-based)
+  - [ ] Variáveis de ambiente seguras em secret manager
+  - [v] CI backend básico (smoke GET /health)
+  - [v] CI valida WhatsApp dry-run (send_latest_whatsapp + concurrency)
+  - [v] CI valida DLQ opcional (send_latest_whatsapp_dlq_on_max + concurrency)
+  - [v] Artefatos de deploy prontos (Dockerfile, render.yaml, docker-compose, start script)
+  - [v] Documentação de deploy no Render (README backend)
+  - [v] Badges de CI no README (backend)
+
+## Notas Operacionais — Supabase CLI
+- Ao aplicar migrações, usar `supabase db push` com a CLI já conectada via navegador.
+- Em caso de erro, executar `supabase login` novamente e validar `supabase link --project-ref <PROJECT_REF>`.
+- Se variáveis de ambiente interferirem, desativar temporariamente `.env` e reativar após o push.
+- Sempre observar esta nota antes de rodar `db push`.
+
+- Atualização da CLI no Windows (via Scoop):
+  1) `scoop bucket add supabase https://github.com/supabase/scoop-bucket.git`
+  2) `scoop update supabase` (se não instalado: `scoop install supabase`)
+  3) `supabase --version` deve mostrar a versão mais recente (ex.: `2.51.0+`).
+
+- Alternativa (por projeto) via npm:
+  - `npm i -D supabase`
+  - Rodar com `npx supabase <comando>`; verificar com `npx supabase --version`.
+  - Útil quando atualização global não é possível ou em CI.
+
+- Observações:
+  - Evitar múltiplas instalações no PATH; prefira a gestão via Scoop.
+  - Se `supabase --help` indicar versão antiga, revise a ordem do PATH.
+  - Em CI, considere fixar versão no `package.json`.
+
+## Fase 1 — Núcleo de Autenticação e RBAC
+- Implementar login/signup/refresh/logout (20 min inactivity enforcement).
+- Implementar middleware RBAC.
+- Testes:
+  - [ ] Session expire em 20min (frontend e invalidação backend)
+  - [ ] Testes unitários auth
+- Checklist:
+  - [v] itens:
+    - nome: SUPABASE_ANON_KEY configurada no render.yaml
+      status: concluido
+    - nome: Endpoints de autenticação prontos (signup/login/logout/refresh)
+      status: concluido
+    - nome: Token refresh funcionando
+      status: concluido
+    - nome: TTL sessão 20min (expiresIn=1200) configurado no login
+      status: concluido
+    - nome: Expiração por inatividade com auto-refresh quando TTL <5min e x-refresh-token
+      status: concluido
+    - nome: Middleware RBAC implementado e aplicado em rotas sensíveis
+      status: concluido
+    - nome: RBAC documentado no README com exemplos de headers
+      status: concluido
+  - [ ] RLS policies compatíveis com roles
+
+## Fase 2 — Módulo Unidades + Turmas
+- CRUD Unidades e Turmas (incluindo quadro de horários).
+- UI: unidade cards, formulário turma (schedule add).
+- Testes:
+  - [ ] Criar unidade -> criar turma -> validar schedule JSON
+- Checklist:
+  - [ ] Validadores de CEP/telefone
+  - [v] Link unit -> classes criado
+
+## Fase 3 — Professionals (Equipe Técnica)
+- CRUD professionals, multiselect unidades e especialidades.
+- Relacionar profissionais a turmas.
+- Checklist:
+  - [ ] Upload avatar opcional (Supabase Storage)
+  - [ ] Filtros e pesquisa implementados
+
+## Fase 4 — Students + Plans + Recorrências + Discounts
+- CRUD students com cálculo de mensalidade automático.
+- Lock start_date após criação.
+- CRUD plans/recurrences/proportionals/discounts.
+- Testes:
+  - [ ] Criar student e validar mensalidade calculada
+  - [ ] Testar descontos e proporcionalidade
+- Checklist:
+  - [ ] Input masks (dd/mm/yyyy, HH:MM)
+  - [ ] Select de plano e recorrência funcionando
+
+## Fase 5 — Financeiro (Mensalidades / Despesas / Adiantamentos / Repasses)
+- Implementar geração de mensalidades (botão Gerar Mensalidades).
+- Implementar marcação de pago (anexar comprovante), envio WhatsApp.
+- Implementar repasses com conciliação (considera adiantamentos).
+- Regras especiais: primeira mensalidade vencimento = data de geração.
+- Testes (integração):
+  - [v] Gerar mensalidades para todos alunos ativos
+  - [v] Marcar pago (comprovante) -> gerar adiantamento quando for dinheiro
+  - [v] Conciliar repasses subtraindo adiantamentos
+- Checklist:
+  - [v] Tabelas base criadas (invoices, expenses, advances, repasses)
+  - [v] RLS granular inicial (Gerente por unidade; Financeiro leitura)
+  - [v] Funções gerar mensalidades e marcar pago criadas
+  - [v] Regra de repasse fixo por unidade (função generate_unit_fixed_repasses)
+  - [v] Regra de repasse equipe (negociação %/fixo) criada
+  - [v] Visão de conciliação de repasses criada (v_repasses_conciliation)
+  - [v] Auditoria financeira (finance_events + log_finance_event)
+  - [v] Auditoria conectada às funções (gera/ paga invoices; gera/ paga repasses)
+  - [v] Resumo de eventos por período (get_finance_events_summary + v_finance_events_monthly)
+  - [v] Retenção de auditoria (purge_old_finance_events)
+  - [v] Anexo de comprovante para repasses (bucket Storage + receipt_url + policies)
+  - [v] Template WhatsApp parametrizável
+  - [v] Campo chavePix em Configurações
+  - [v] Fila de envio WhatsApp (outbox + função queue_invoice_whatsapp)
+  - [v] Worker envio WhatsApp (processa v_whatsapp_outbox_pending)
+  - [v] Endpoint envio WhatsApp (POST /invoices/:id/send-whatsapp)
+  - [v] Migrações aplicadas no remoto (supabase link + db push)
+  - [v] Template WhatsApp atualizado com {{month}} e {{pix_key}} e validado (outbox)
+  - [v] Dry-run send_latest_whatsapp.js com LOG_DETAILS (PIX mascarado)
+  - [v] Envio stub OK via endpoint e registro na outbox
+
+## Fase 6 — Relatórios e Exportações
+- Export CSV/XLSX para: alunos, mensalidades, repasses, despesas.
+- Dashboard financeiro (KPIs).
+- Checklist:
+  - [v] Filtros por unidade, intervalo datas (export_invoices_csv.js)
+  - [v] Export repasses CSV (export_repasses_csv.js)
+  - [v] Export despesas CSV (export_expenses_csv.js)
+  - [v] Exports testados em datasets grandes
+
+## Fase 7 — Integrações & Automação
+- Integração WhatsApp (webhook), gateway de pagamento.
+- Orquestração com n8n para automações (pagamentos conciliados -> notificar).
+- Checklist:
+  - [v] Webhooks seguros (signature verification)
+  - [v] Retries de WhatsApp validados (send_latest_whatsapp + MAX_ATTEMPTS)
+  - [v] Dead-letter handling (DLQ opcional via MOVE_TO_DLQ_ON_MAX)
+
+## Fase 8 — QA Final, Performance, Lançamento
+- Completar E2E tests e load tests (picos de uso).
+- Fazer revisão de segurança (pentest básico).
+- Criar runbook e treinar suporte.
+- Checklist:
+  - [ ] Backup automático OK
+  - [ ] Alertas configurados
+
+---
+
+# Casos de teste importantes (exemplos rápidos)
+1. Criar aluno com plano e recalcule mensalidade com desconto recorrente + proporcionalidade -> validar valor final.
+2. Gerar mensalidades no dia 01/09 -> verificar vencimento padrão 05/09; para aluno criado em 02/09, primeira mensalidade vencimento = 02/09.
+3. Marcar mensalidade pago em dinheiro -> gerar adiantamento para profissional responsável.
+4. Repasses: profissional com repasse fixo deve receber apenas valor fixo, independente do percentual.
+5. Permissões: role Financeiro não consegue criar/editar unidades; Admin sim.
+
+# Notas operacionais — Supabase CLI (db push)
+- Procedimento de push (seguir sempre):
+  1) Login via navegador: `supabase login` (abre link, inserir código).
+  2) Validar link: `supabase link --project-ref <PROJECT_REF>` se necessário.
+  3) Desativar `.env` temporariamente se houver `SUPABASE_*` conflitantes.
+  4) Executar: `supabase db push`.
+  5) Reativar `.env`.
+- Recuperação rápida em caso de erro (auth/link):
+  - `supabase logout --yes` -> `supabase login` -> repetir `db push`.
+- Dicas:
+  - Evitar `SUPABASE_ACCESS_TOKEN` inválido na sessão/`.env`.
+  - Alternativa avançada: `supabase login --token "sbp_..."` e `supabase link ...`.
+  - Alternativa: usar `SUPABASE_DB_URL` do pooler em `supabase db push`.
+  - Após o push, validar `GET /health` local e CI do backend.
+
+## Notas Operacionais — CORS
+- Variável `CORS_ORIGINS` no `.env` controlando origens permitidas (CSV).
+- Desenvolvimento: `http://localhost:5173,http://127.0.0.1:5173` já suportado.
+- Produção: informar domínios reais do frontend; evitar wildcard.
+- Implementado com `@fastify/cors` no servidor; validar via `/health` e chamadas simples.
+
+## Notas Operacionais — Types do Supabase
+- Gerar types localmente: `npm run gen:types` (usa CLI no PATH).
+- Pré-requisitos: `supabase login` e `supabase link --project-ref <REF>` válidos.
+- O script lê `supabase/.temp/project-ref` e salva em `backend/src/types/supabase.d.ts`.
+- CI gera e publica artefato `supabase-types` (job `supabase-types` em `backend-ci.yml`).
+- Após cada `supabase db push`, executar `npm run gen:types` localmente ou baixar do artefato do CI.
+
+## Fase — Deploy Backend (Render)
+
+- Itens concluídos:
+  - Porta padronizada `3001` (Dockerfile/compose/render.yaml/server).
+  - CORS por `CORS_ORIGINS` com fallback dev `5173`.
+  - Webhook WhatsApp com `STRICT_WEBHOOK_SIGNATURE="true"` (seguro sem header).
+  - Workflow CI pós-deploy `backend-smoke-deploy.yml`.
+  - Smoke tests locais OK (`scripts/smoke-tests.ps1`).
+  - `DEPLOY_CHECKLIST.md` criado com passos de deploy.
+  - `RENDER_SECRETS.sample.env` criado para copiar segredos.
+
+- Pendências operacionais:
+  - Configurar segredos no Render (`SUPABASE_*`, `API_KEY`, `CORS_ORIGINS`, `WHATSAPP_*`).
+  - Conectar repo ao Render e publicar; validar `/health`.
+  - Executar workflow de smoke pós-deploy com `base_url` do serviço.
+  - (Opcional) Ativar WhatsApp (verify token + secret).
+  - Backups/alertas no Supabase; logs/monitoramento.
+  - Documentação OpenAPI e Runbook básico.

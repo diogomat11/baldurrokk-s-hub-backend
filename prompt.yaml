@@ -1,0 +1,306 @@
+YAML — prompt estruturado e projeto (cópia única)
+project:
+  name: "SAAS-Escolinha"
+  description: >
+    Plataforma SAAS para gestão de escolinhas de futebol (rede de unidades),
+    com cadastro de alunos, gestão financeira (mensalidades, repasses, despesas),
+    gestão de equipe, relatórios e integrações (WhatsApp, gateways de pagamento).
+  design:
+    style: "minimalista"
+    icons: "modernos"
+    layout: 
+      - responsive: ["notebook", "tablet", "mobile"]
+      - sidebar: true
+      - topbar_notifications_icon: true
+  tech_stack:
+    frontend: "React (Vite/Next opcional para SSR)"
+    backend: "Node.js (Express / Fastify)"
+    database: "Supabase (Postgres)"
+    auth: "Supabase Auth + JWT"
+    integrations: ["WhatsApp API (Twilio/360dialog ou webhook)", "Gateways de pagamento (Stripe/Pagar.me)", "n8n para automações"]
+    hosting: ["Vercel/Netlify (frontend)", "Render/Heroku/CloudRun (backend)", "Supabase (db/storage/functions)"]
+  global_rules:
+    session_timeout_minutes: 20
+    date_format: "dd/mm/yyyy"
+    time_format: "HH:MM"
+    currency: "BRL"
+    locales: ["pt-BR"]
+    security:
+      password_policy: "mínimo 10 caracteres, 1 maiúscula, 1 número, 1 símbolo"
+      two_factor: optional
+      roles: ["Admin","Gerente","Financeiro","Equipe","Aluno"]
+      permissions_model: "RBAC (roles + granular permissions per resource)"
+      audit_logs: true
+  modular_architecture:
+    modules:
+      - dashboard
+      - network_units
+      - teams
+      - students
+      - finance
+      - reports
+      - settings
+      - integrations
+    principle: "cada módulo isolado com API e testes; UI em componentes reutilizáveis; feature flags"
+
+YAML — esquema de banco de dados (resumo para Supabase)
+database:
+  provider: supabase
+  schemas:
+    public:
+      tables:
+        users:
+          - id: uuid (pk)
+          - name: text
+          - cpf: text
+          - phone: text
+          - email: text (unique)
+          - avatar_url: text
+          - password_hash: text
+          - role: enum (Admin, Gerente, Financeiro, Equipe, Aluno)
+          - status: enum (Ativo, Inativo)
+          - created_at: timestamptz
+          - updated_at: timestamptz
+        networks:
+          - id: uuid
+          - name: text
+          - description: text
+          - created_at, updated_at
+        units:
+          - id: uuid
+          - network_id: uuid (fk networks.id)
+          - name: text
+          - manager_user_id: uuid (fk users.id)
+          - address: text
+          - city: text
+          - state: text
+          - cep: text
+          - phone: text
+          - email: text
+          - repass_type: enum (Percentual, Fixo)
+          - repass_value: numeric
+          - status: enum (Ativo, Inativo)
+          - created_at, updated_at
+        classes (turmas):
+          - id: uuid
+          - unit_id: uuid
+          - name: text
+          - category: text
+          - vacancies: int
+          - status: enum (Ativo, Inativo)
+          - schedule: jsonb # [{weekday: 1..7, start: "HH:MM", end:"HH:MM"}]
+          - teacher_ids: uuid[] # multiselect
+          - created_at, updated_at
+        professionals:
+          - id: uuid
+          - name, cpf, role_position (Gestor, Professor, Auxiliar, Administrativo)
+          - salary: numeric
+          - specialties: text[] # multiselect
+          - phone, email
+          - unit_ids: uuid[] # vinculação com múltiplas unidades
+          - hired_at: date
+          - status: enum
+        students:
+          - id: uuid
+          - avatar_url
+          - name
+          - birthdate: date (dd/mm/yyyy input)
+          - start_date: date (immutable after create)
+          - cpf
+          - address
+          - guardian_name
+          - guardian_phone
+          - guardian_email
+          - unit_id
+          - class_id
+          - plan_id
+          - payment_method: enum (Dinheiro, PIX, Crédito, Débito)
+          - recurrence_id
+          - discount_id (nullable)
+          - status
+        plans:
+          - id, name, unit_id, frequency_per_week: int, value: numeric, start_date, end_date, status
+        recurrences:
+          - id, type (Anual, Semestral, Trimestral, Mensal), discount_percent, start_date, end_date, units_applicable: uuid[]
+        proportionals:
+          - id, start_period, end_period, discount_percent, status
+        negotiations:
+          - id, type (Unidade/Equipe), entity_id(uuid), repass_type, repass_value, start_date, end_date
+        invoices (mensalidades):
+          - id: uuid
+          - student_id: uuid
+          - unit_id: uuid
+          - due_date: date
+          - amount_total: numeric
+          - amount_discount: numeric
+          - amount_net: numeric
+          - payment_method: enum (PIX, Dinheiro, Crédito, Débito)
+          - status: enum (Aberta, Pago)
+          - paid_at: timestamptz (nullable)
+          - payment_proof_url: text
+          - created_at, updated_at
+        whatsapp_outbox:
+          - id: uuid
+          - invoice_id: uuid
+          - status: enum (Pending, Sent, Failed)
+          - attempts: int
+          - last_attempt_at: timestamptz (nullable)
+          - error: text (nullable)
+          - dead_letter_at: timestamptz (nullable)
+          - created_at: timestamptz
+        whatsapp_dead_letter:
+          - id: uuid
+          - outbox_id: uuid
+          - reason: text
+          - created_at: timestamptz
+        expenses:
+          - id, unit_id, supplier, type, value, due_date, status
+        advances:
+          - id, type (Unidade/Equipe), entity_id, name, value, date, status (A_Descontar, Conciliado), notes
+        repasses:
+          - id, entity_type (Unidade/Equipe), entity_id, negotiation_id
+          - period_start, period_end
+          - gross_value, advance_deduction, net_value
+          - status (Aberta, Pago), paid_at, receipt_url
+          - created_at
+        audit_logs:
+          - id, user_id, action, resource_type, resource_id, changes_json, created_at
+  indexes_and_policies:
+    - policies: "Row level security: users only see resources they have access to unless Admin"
+    - indexes: "index invoices by due_date, status; index students by name, unit_id; index whatsapp_outbox by invoice_id,status"
+
+YAML — endpoints e eventos principais (resumo)
+api:
+  auth:
+    - POST /auth/signup
+    - POST /auth/login
+    - POST /auth/refresh
+    - POST /auth/logout
+  users:
+    - GET /users
+    - GET /users/:id
+    - POST /users
+    - PUT /users/:id
+    - DELETE /users/:id
+  units:
+    - GET /units
+    - POST /units
+    - PUT /units/:id
+  classes:
+    - GET /units/:unitId/classes
+    - POST /units/:unitId/classes
+  students:
+    - GET /students
+    - POST /students
+    - PUT /students/:id
+    - POST /students/:id/generate-invoice
+  invoices:
+    - GET /invoices
+    - POST /invoices/generate (gera mensalidades de todos alunos ativos)
+    - PUT /invoices/:id/mark-paid (upload comprovante, data)
+    - POST /invoices/:id/send-whatsapp
+  finance:
+    - GET /finance/summary
+    - GET /finance/repasses
+    - POST /finance/conciliate
+  integrations:
+    - POST /webhook/whatsapp
+    - POST /webhook/payment
+    - webhook strict signature: enabled via env `STRICT_WEBHOOK_SIGNATURE` + `META_APP_SECRET`
+  notifications:
+    - GET /notifications
+    - POST /notifications/mark-read
+events:
+  - notification_click: opens modal or redirect to resource (ex: mensalidade vencida -> modal of invoice)
+  - invoice_generated: triggers notification + optional whatsapp reminder
+  - payment_confirmed: triggers repass flow
+
+YAML — regras de negócio (por módulo)
+business_rules:
+  general:
+    - session_expire: logout after 20 minutes inactivity (frontend timer + backend token invalidation)
+    - date_input_mask: enforce dd/mm/yyyy at UI; store in DB as ISO date
+    - time_input_mask: HH:MM
+  students:
+    - on_create: compute monthly_fee -> base plan value
+      apply:
+        - recurrence_discount (if applicable)
+        - proportionality_discount (if start date within configured proportional range)
+        - active_discounts specific to student
+    - start_date: immutable after creation (used to calculate first invoice)
+  invoices:
+    - generate_monthly: default due_date = 05 of generation month
+    - first_invoice_for_new_student: due_date = generation date (immediate)
+    - invoice_status_flow: status usa 'Aberta' e 'Pago'; 'Vencida' é calculada por due_date (não enum)
+    - money_paid_invoice: if payment method money and invoice is marked paid -> create advance for responsible professional (with observation "Mensalidade do Aluno [mês] e valor [R$]")
+    - send_whatsapp: templated message with placeholders: [NomeResponsavel], [NomeAluno], [mes_referencia], [valorMensalidade], [chavePix]
+  repasses:
+    - calculate per negotiation: if type Fixo -> use fixed value; if Percentual -> calculate % sobre mensalidade líquida
+    - when conciliate: subtract adiantamentos "A_Descontar" first
+  finance:
+    - dashboard shows: total_receivables, overdue_count, MRR (faturamento mensal), churn_rate, inadimplencia_percent
+
+YAML — UI / componentes principais
+ui_components:
+  sidebar: menu with modules, collapsible
+  topbar:
+    - notifications_icon: opens list; click pushes user to resource modal/page
+  cards:
+    - unit_card: shows name, city, status, repass_type+value, actions: edit, details
+    - professional_card
+    - student_row: avatar, name, guardian, unit, plan, actions
+  forms:
+    - validations: masks (date/time/cpf/currency)
+    - accessibility: labels, aria attributes
+  modals:
+    - invoice_modal: shows details and actions (marcar pago, enviar whatsapp, anexar comprovante)
+  responsive_rules:
+    - less than 768px: sidebar collapsed to bottom nav; cards stacked
+
+YAML — testes e QA (por módulo)
+qa:
+  unit_tests:
+    - backend: services (invoice calc, repass calc, auth)
+    - frontend: component rendering, form validations
+  integration_tests:
+    - generate_monthly_invoices_flow (create student -> generate invoices -> verify due_date & amount)
+    - mark_invoice_paid -> verify repass/advance generated
+    - whatsapp_dlq_on_max_attempts (MAX_ATTEMPTS=1 + MOVE_TO_DLQ_ON_MAX)
+  e2e_tests:
+    - admin_user_flow: CRUD units, create class, add professional, create student, generate invoices, mark paid
+    - permission_checks: ensure role-based restrictions (ex: Financeiro cannot delete unit)
+  test_data:
+    - seed: small dataset with 2 networks, 3 units, 5 classes, 10 professionals, 30 students
+  monitoring:
+    - Sentry for errors
+    - Prometheus/Cloud metrics for API latency, DB connections, queue length
+
+YAML — deployment / CI-CD / infra
+deployment:
+  ci_cd:
+    - lint
+    - unit_tests
+    - build_frontend
+    - build_backend
+    - integration_tests (staging)
+    - deploy_staging
+    - smoke_tests
+    - deploy_production (manual approval)
+  backups:
+    - nightly DB dump
+    - transaction_log retention 30 days
+  migrations:
+    - use migrator (pg-migrate / prisma / flyway)
+  feature_flags:
+    - launch dark features behind flags (e.g., integrations whatsapp)
+  rollback_strategy:
+    - quick revert to previous tag; db-migrations reversible where possible
+
+YAML — observações finais e entregáveis
+deliverables:
+  - full API spec (OpenAPI)
+  - DB migration scripts for Supabase
+  - React component library (Storybook)
+  - E2E test suite (Cypress/Playwright)
+  - Deployment scripts (Dockerfiles, Helm optional)
+  - Runbook: restore, incident steps, escalation contacts
