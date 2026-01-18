@@ -1194,7 +1194,7 @@ fastify.get('/dashboard/metrics', { preHandler: ensureRole(['Admin', 'Gerente', 
 const start = async () => {
   try {
     const port = process.env.PORT || 3001;
-    const host = '127.0.0.1';
+    const host = '0.0.0.0';
     await fastify.listen({ port, host });
     console.log(`Server listening on http://${host}:${port}`);
   } catch (err) {
