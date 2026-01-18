@@ -1,0 +1,11 @@
+# Backend Dependencies (Node.js/Fastify)
+# Generated from package.json
+# To install: npm install
+
+@fastify/cors^8.3.0
+@supabase/supabase-js^2.47.6
+dotenv^16.4.5
+fastify^4.26.2
+
+# Dev Dependencies
+kill-port^2.0.1
